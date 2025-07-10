@@ -1,0 +1,7 @@
+services:
+  faenger:
+    image: faenger
+    build:
+      context: .
+      dockerfile: faenger/Dockerfile
+
