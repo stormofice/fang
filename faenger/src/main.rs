@@ -1,4 +1,7 @@
 use crate::models::NewUser;
+use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
+use argon2::{Argon2, PasswordHasher};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
@@ -6,10 +9,10 @@ use axum::{Json, Router};
 use diesel::SqliteConnection;
 use diesel::prelude::*;
 use dotenvy::dotenv;
+use serde::Deserialize;
 use std::env;
 use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
-
 pub mod models;
 pub mod schema;
 
@@ -47,15 +50,37 @@ async fn root() -> &'static str {
     "🦕"
 }
 
+#[derive(Deserialize)]
+struct UserAuthReq {
+    username: String,
+    password: String,
+}
+
 async fn register(
     State(state): State<AppState>,
-    Json(payload): Json<NewUser>,
+    Json(payload): Json<UserAuthReq>,
 ) -> (StatusCode, String) {
     use crate::schema::users;
+
+    // surely the defaults will be sane
+    let argon2 = Argon2::default();
+    let salt = SaltString::generate(&mut OsRng);
+    let pw_hash = match argon2.hash_password(payload.password.as_bytes(), &salt) {
+        Ok(hash) => hash,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "password issue".to_string(),
+            );
+        }
+    };
+
+    let new_user = NewUser::new(payload.username, pw_hash.to_string());
+
     let db_response = {
         let mut db = state.db.lock().expect("mutex was poisoned :(");
         diesel::insert_into(users::table)
-            .values(&payload)
+            .values(&new_user)
             .execute(db.deref_mut())
     };
 
@@ -64,5 +89,13 @@ async fn register(
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "not ok".to_string()),
     }
 
+    (StatusCode::CREATED, "ok".to_string())
+}
+
+async fn login(
+    State(state): State<AppState>,
+    Json(payload): Json<UserAuthReq>,
+) -> (StatusCode, String) {
+    use crate::schema::users;
     (StatusCode::CREATED, "ok".to_string())
 }

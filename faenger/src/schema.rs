@@ -14,6 +14,8 @@ diesel::table! {
         id -> Integer,
         name -> Text,
         password_hash -> Text,
+        api_key -> Text,
+        time_registered -> Text,
     }
 }
 
