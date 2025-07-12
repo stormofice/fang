@@ -270,6 +270,7 @@ dependencies = [
  "diesel",
  "dotenvy",
  "libsqlite3-sys",
+ "serde",
  "tokio",
 ]
 

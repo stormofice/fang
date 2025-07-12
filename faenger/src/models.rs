@@ -1,5 +1,6 @@
 use crate::schema::users;
 use diesel::prelude::*;
+use serde::Deserialize;
 
 #[derive(Queryable, Selectable, Debug)]
 #[diesel(table_name = crate::schema::faenge)]
@@ -20,9 +21,9 @@ pub struct User {
     pub password_hash: String,
 }
 
-#[derive(Insertable)]
+#[derive(Insertable, Deserialize)]
 #[diesel(table_name = users)]
-pub struct NewUser<'a> {
-    pub name: &'a str,
-    pub password_hash: &'a str,
+pub struct NewUser {
+    pub name: String,
+    pub password_hash: String,
 }
