@@ -1,20 +1,21 @@
+#![allow(clippy::uninlined_format_args)]
 use crate::models::{NewUser, User};
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use axum::extract::State;
+use axum::extract::{FromRef, FromRequestParts, State};
 use axum::http::StatusCode;
+use axum::http::request::Parts;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use diesel::SqliteConnection;
 use diesel::prelude::*;
 use dotenvy::dotenv;
 use serde::Deserialize;
-use std::convert::Infallible;
 use std::env;
-use std::net::ToSocketAddrs;
 use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
+
 pub mod models;
 pub mod schema;
 
@@ -41,6 +42,7 @@ async fn main() {
         .route("/", get(root))
         .route("/register", post(register))
         .route("/login", post(login))
+        .route("/check", get(check))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:4567")
@@ -51,8 +53,76 @@ async fn main() {
         .await
         .expect("Axum stopped serving 😤")
 }
+
+pub struct ApiKey;
+
+impl<S> FromRequestParts<S> for ApiKey
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = (StatusCode, String);
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let req_api_key = parts
+            .headers
+            .get("X-Api-Key")
+            .and_then(|hv| hv.to_str().ok())
+            .ok_or((
+                StatusCode::UNAUTHORIZED,
+                "Missing X-Api-Key header".to_string(),
+            ))?;
+
+        if req_api_key.len() != 32 {
+            return Err((StatusCode::BAD_REQUEST, "Malformed X-Api-Key".to_string()));
+        }
+
+        let app_state = AppState::from_ref(state);
+
+        let n_api_keys = {
+            let mut db = app_state.db.lock().expect("Mutex was poisoned :(");
+            use crate::schema::users::dsl::*;
+
+            match users
+                .filter(api_key.eq(req_api_key))
+                .count()
+                .first::<i64>(db.deref_mut())
+            {
+                Ok(rows) => rows,
+                Err(e) => {
+                    log::error!("Could not access database for api key auth: {:?}", e);
+                    return Err((StatusCode::INTERNAL_SERVER_ERROR, "uhm".to_string()));
+                }
+            }
+        };
+
+        if n_api_keys == 0 {
+            Err((
+                StatusCode::UNAUTHORIZED,
+                "Invalid API key, nuh uh".to_string(),
+            ))
+        } else if n_api_keys == 1 {
+            Ok(ApiKey)
+        } else {
+            log::error!(
+                "Found shared API Keys, Key: {}, Count: {}",
+                req_api_key,
+                n_api_keys
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Sorry, we messed up our keys".to_string(),
+            ))
+        }
+    }
+}
+
 async fn root() -> &'static str {
     "🦕"
+}
+
+async fn check(_auth: ApiKey) -> (StatusCode, String) {
+    (StatusCode::OK, "you good".to_string())
 }
 
 #[derive(Deserialize)]
@@ -101,7 +171,6 @@ async fn login(
     State(state): State<AppState>,
     Json(payload): Json<UserAuthReq>,
 ) -> (StatusCode, String) {
-    use crate::schema::users;
     use crate::schema::users::dsl::*;
 
     let user_rows = {
