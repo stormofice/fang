@@ -1,5 +1,5 @@
 #![allow(clippy::uninlined_format_args)]
-use crate::models::{NewUser, User};
+use crate::models::{Fang, NewFang, NewUser, User};
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -43,6 +43,8 @@ async fn main() {
         .route("/register", post(register))
         .route("/login", post(login))
         .route("/check", get(check))
+        .route("/faenge/list", get(list))
+        .route("/faenge/save", post(save))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:4567")
@@ -54,9 +56,9 @@ async fn main() {
         .expect("Axum stopped serving 😤")
 }
 
-pub struct ApiKey;
+pub struct AuthInfo(User);
 
-impl<S> FromRequestParts<S> for ApiKey
+impl<S> FromRequestParts<S> for AuthInfo
 where
     S: Send + Sync,
     AppState: FromRef<S>,
@@ -79,14 +81,14 @@ where
 
         let app_state = AppState::from_ref(state);
 
-        let n_api_keys = {
+        let users = {
             let mut db = app_state.db.lock().expect("Mutex was poisoned :(");
             use crate::schema::users::dsl::*;
 
             match users
                 .filter(api_key.eq(req_api_key))
-                .count()
-                .first::<i64>(db.deref_mut())
+                .select(User::as_select())
+                .load(db.deref_mut())
             {
                 Ok(rows) => rows,
                 Err(e) => {
@@ -96,18 +98,19 @@ where
             }
         };
 
-        if n_api_keys == 0 {
+        if users.is_empty() {
             Err((
                 StatusCode::UNAUTHORIZED,
                 "Invalid API key, nuh uh".to_string(),
             ))
-        } else if n_api_keys == 1 {
-            Ok(ApiKey)
+        } else if users.len() == 1 {
+            Ok(AuthInfo(users.first().unwrap().clone()))
         } else {
             log::error!(
-                "Found shared API Keys, Key: {}, Count: {}",
+                "Found shared API Keys, Key: {}, Count: {}, Users: {:?}",
                 req_api_key,
-                n_api_keys
+                users.len(),
+                users
             );
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -121,7 +124,7 @@ async fn root() -> &'static str {
     "🦕"
 }
 
-async fn check(_auth: ApiKey) -> (StatusCode, String) {
+async fn check(_auth: AuthInfo) -> (StatusCode, String) {
     (StatusCode::OK, "you good".to_string())
 }
 
@@ -230,4 +233,54 @@ async fn login(
     }
 
     (StatusCode::OK, db_user.api_key.clone())
+}
+
+async fn list(State(state): State<AppState>, auth_info: AuthInfo) -> (StatusCode, Json<Vec<Fang>>) {
+    let mut db = state.db.lock().expect("Mutex was poisoned :(");
+    match Fang::belonging_to(&auth_info.0)
+        .select(Fang::as_select())
+        .load(db.deref_mut())
+    {
+        Ok(res) => (StatusCode::OK, Json(res)),
+        Err(e) => {
+            log::error!(
+                "Error while listing faenge for: {:?}, error: {:?}",
+                &auth_info.0,
+                e
+            );
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(vec![]))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct SaveFangReq {
+    url: String,
+    title: Option<String>,
+}
+
+async fn save(
+    State(state): State<AppState>,
+    auth_info: AuthInfo,
+    Json(payload): Json<SaveFangReq>,
+) -> (StatusCode, String) {
+    use crate::schema::faenge;
+
+    let new_fang = NewFang::new(payload.url, payload.title, auth_info.0.id);
+    let mut db = state.db.lock().expect("Mutex was poisoned :(");
+    match diesel::insert_into(faenge::table)
+        .values(&new_fang)
+        .execute(db.deref_mut())
+    {
+        Ok(_) => (StatusCode::OK, "caught it".to_string()),
+        Err(e) => {
+            log::error!(
+                "Could not insert new fang: {:?} for user: {:?} due to: {:?}",
+                new_fang,
+                auth_info.0,
+                e
+            );
+            (StatusCode::INTERNAL_SERVER_ERROR, "troubles".to_string())
+        }
+    }
 }

@@ -6,6 +6,7 @@ diesel::table! {
         url -> Text,
         title -> Nullable<Text>,
         time_created -> Text,
+        user_id -> Integer,
     }
 }
 
@@ -18,6 +19,8 @@ diesel::table! {
         time_registered -> Text,
     }
 }
+
+diesel::joinable!(faenge -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     faenge,
