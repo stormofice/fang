@@ -6,13 +6,15 @@ use axum::http::StatusCode;
 use axum::Json;
 use diesel::prelude::*;
 use serde::Deserialize;
-use std::ops::DerefMut;
 
 pub async fn list(State(state): State<AppState>, auth_info: AuthInfo) -> (StatusCode, Json<Vec<Fang>>) {
-    let mut db = state.db.lock().expect("Mutex was poisoned :(");
+    let mut db = match state.db.get() {
+        Ok(conn) => conn,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(vec![])),
+    };
     match Fang::belonging_to(&auth_info.0)
         .select(Fang::as_select())
-        .load(db.deref_mut())
+        .load(&mut db)
     {
         Ok(res) => (StatusCode::OK, Json(res)),
         Err(e) => {
@@ -40,10 +42,13 @@ pub async fn save(
     use crate::schema::faenge;
 
     let new_fang = NewFang::new(payload.url, payload.title, auth_info.0.id);
-    let mut db = state.db.lock().expect("Mutex was poisoned :(");
+    let mut db = match state.db.get() {
+        Ok(conn) => conn,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Database connection timeout".to_string()),
+    };
     match diesel::insert_into(faenge::table)
         .values(&new_fang)
-        .execute(db.deref_mut())
+        .execute(&mut db)
     {
         Ok(_) => (StatusCode::OK, "caught it".to_string()),
         Err(e) => {

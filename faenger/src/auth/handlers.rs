@@ -8,7 +8,6 @@ use axum::http::StatusCode;
 use axum::Json;
 use diesel::prelude::*;
 use serde::Deserialize;
-use std::ops::DerefMut;
 use super::extractors::AuthInfo;
 
 #[derive(Deserialize)]
@@ -39,10 +38,13 @@ pub async fn register(
     let new_user = NewUser::new(payload.username, pw_hash.to_string());
 
     let db_response = {
-        let mut db = state.db.lock().expect("mutex was poisoned :(");
+        let mut db = match state.db.get() {
+            Ok(conn) => conn,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Database connection timeout".to_string()),
+        };
         diesel::insert_into(users::table)
             .values(&new_user)
-            .execute(db.deref_mut())
+            .execute(&mut db)
     };
 
     match db_response {
@@ -60,11 +62,14 @@ pub async fn login(
     use crate::schema::users::dsl::*;
 
     let user_rows = {
-        let mut db = state.db.lock().expect("mutex was poisoned :(");
+        let mut db = match state.db.get() {
+            Ok(conn) => conn,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Database connection timeout".to_string()),
+        };
         match users
             .filter(name.eq(&payload.username))
             .select(User::as_select())
-            .load(db.deref_mut())
+            .load(&mut db)
         {
             Ok(rows) => rows,
             Err(e) => {

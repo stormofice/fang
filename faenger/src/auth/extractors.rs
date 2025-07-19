@@ -4,7 +4,6 @@ use axum::extract::{FromRef, FromRequestParts};
 use axum::http::request::Parts;
 use axum::http::StatusCode;
 use diesel::prelude::*;
-use std::ops::DerefMut;
 
 pub struct AuthInfo(pub User);
 
@@ -32,13 +31,15 @@ where
         let app_state = AppState::from_ref(state);
 
         let users = {
-            let mut db = app_state.db.lock().expect("Mutex was poisoned :(");
+            let mut db = app_state.db.get().map_err(|_| {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Database connection timeout".to_string())
+            })?;
             use crate::schema::users::dsl::*;
 
             match users
                 .filter(api_key.eq(req_api_key))
                 .select(User::as_select())
-                .load(db.deref_mut())
+                .load(&mut db)
             {
                 Ok(rows) => rows,
                 Err(e) => {
