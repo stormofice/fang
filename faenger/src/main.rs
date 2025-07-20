@@ -1,6 +1,6 @@
 #![allow(clippy::uninlined_format_args)]
-use diesel::r2d2::ConnectionManager;
 use diesel::SqliteConnection;
+use diesel::r2d2::ConnectionManager;
 use dotenvy::dotenv;
 use std::env;
 

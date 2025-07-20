@@ -1,8 +1,8 @@
-use crate::auth::handlers::{check, login, register};
-use crate::links::handlers::{list, save};
 use crate::AppState;
-use axum::routing::{get, post};
+use crate::auth::handlers::{check, login, register};
+use crate::links::handlers::{has, list, save};
 use axum::Router;
+use axum::routing::{get, post};
 
 async fn root() -> &'static str {
     "🦕"
@@ -16,4 +16,5 @@ pub fn create_router() -> Router<AppState> {
         .route("/check", get(check))
         .route("/faenge/list", get(list))
         .route("/faenge/save", post(save))
+        .route("/faenge/has", get(has))
 }
