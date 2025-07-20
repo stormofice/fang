@@ -1,0 +1,27 @@
+{
+  "manifest_version": 2,
+  "name": "Werfer",
+  "version": "0.1",
+  "description": "",
+  "homepage_url": "https://a.b.de",
+  "icons": {
+    "64": "icons/ext.png"
+  },
+  "permissions": ["activeTab"],
+  "page_action": {
+    "default_icon": {
+      "12": "icons/save_12.png",
+      "16": "icons/save_16.png",
+      "20": "icons/save_20.png",
+      "24": "icons/save_24.png",
+      "32": "icons/save_32.png",
+      "64": "icons/save_64.png"
+    },
+    "default_title": "Save",
+    "show_matches": ["<all_urls>"]
+  },
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  }
+}
