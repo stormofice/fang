@@ -7,7 +7,12 @@
   "icons": {
     "64": "icons/ext.png"
   },
-  "permissions": ["activeTab"],
+  "permissions": [
+    "activeTab",
+    "storage",
+    "tabs",
+    "<all_urls>"
+  ],
   "page_action": {
     "default_icon": {
       "12": "icons/save_12.png",
@@ -18,10 +23,22 @@
       "64": "icons/save_64.png"
     },
     "default_title": "Save",
-    "show_matches": ["<all_urls>"]
+    "show_matches": [
+      "<all_urls>"
+    ]
   },
   "background": {
-    "scripts": ["background.js"],
+    "scripts": [
+      "background.js"
+    ],
     "persistent": true
+  },
+  "options_ui": {
+    "page": "options.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "werfer@test.temp"
+    }
   }
 }
