@@ -16,8 +16,15 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if ("action" in message) {
         switch (message.action) {
-            case "saveUrl":
-                saveTab(message.url, message.title);
+            case "tabInteraction":
+                // We do NOT await here, but I think it is fine. We do not care about a response and only want it done.
+                // Adding async to the listener does not work (I think), due to the warnings on:
+                // https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onMessage
+                // Let's just hope for the best 👍
+                handleTabInteractionMessage(message.url, message.title).catch(console.error);
+                break;
+            default:
+                console.warn("[BG} Unhandled runtime message", message);
                 break;
         }
     } else {
@@ -25,6 +32,13 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
+async function handleTabInteractionMessage(url, title) {
+    if (await isUrlKnown(url)) {
+        await forgetUrl(url);
+    } else {
+        await saveTab(url, title);
+    }
+}
 
 // === Backend Handling & Caching ===
 const knownUrlsCache = new Map();
@@ -37,7 +51,12 @@ async function isUrlKnown(url) {
 
     const options = await browser.storage.sync.get();
 
-    const resp = await fetch(`${options.backend_url}/faenge/has?url=${url}`, {headers: {"Content-Type": "application/json", "X-Api-Key": options.api_key}});
+    const resp = await fetch(`${options.backend_url}/faenge/has?url=${url}`, {
+        headers: {
+            "Content-Type": "application/json",
+            "X-Api-Key": options.api_key
+        }
+    });
     if (resp.status === 302) {
         knownUrlsCache.set(url, true);
         return true;
@@ -51,11 +70,6 @@ async function isUrlKnown(url) {
 }
 
 async function saveTab(url, title) {
-    if (await isUrlKnown(url)) {
-        // TODO: Unsave the tab
-        return;
-    }
-
     const options = await browser.storage.sync.get();
 
     const resp = await fetch(`${options.backend_url}/faenge/save`, {
@@ -70,6 +84,25 @@ async function saveTab(url, title) {
     if (resp.status === 200) {
         knownUrlsCache.set(url, true);
         await setToolbarButton(true);
+    } else {
+        console.error(resp);
+    }
+}
+
+async function forgetUrl(url) {
+    const options = await browser.storage.sync.get();
+
+    const resp = await fetch(`${options.backend_url}/faenge/forget`, {
+        method: "DELETE",
+        body: JSON.stringify({
+            url: url,
+        }),
+        headers: {"Content-Type": "application/json", "X-Api-Key": options.api_key},
+    });
+
+    if (resp.status === 200) {
+        knownUrlsCache.set(url, false);
+        await setToolbarButton(false);
     } else {
         console.error(resp);
     }

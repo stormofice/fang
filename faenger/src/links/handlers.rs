@@ -8,6 +8,31 @@ use diesel::prelude::*;
 use serde::Deserialize;
 use std::ops::DerefMut;
 
+fn url_exists_for_user(
+    db: &mut r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
+    user: &crate::users::models::User,
+    url_param: &str,
+) -> Result<bool, diesel::result::Error> {
+    use crate::schema::faenge::dsl::*;
+
+    let count: i64 = Fang::belonging_to(user)
+        .filter(url.eq(url_param))
+        .filter(user_id.eq(user.id))
+        .count()
+        .get_result(db.deref_mut())?;
+
+    if count > 1 {
+        log::warn!(
+            "URL {:?} saved more than once ({} times) by user {:?}",
+            url_param,
+            count,
+            user
+        );
+    }
+
+    Ok(count > 0)
+}
+
 pub async fn list(
     State(state): State<AppState>,
     auth_info: AuthInfo,
@@ -41,23 +66,79 @@ pub async fn has(
     auth_info: AuthInfo,
     Query(payload): Query<HasFangReq>,
 ) -> StatusCode {
-    use crate::schema::faenge::dsl::*;
-
     log::debug!("Received has request: {:?}", payload);
 
     let mut db = match state.db.get() {
         Ok(conn) => conn,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR,
     };
-    match Fang::belonging_to(&auth_info.0)
+
+    match url_exists_for_user(&mut db, &auth_info.0, &payload.url) {
+        Ok(true) => StatusCode::FOUND,
+        Ok(false) => StatusCode::NOT_FOUND,
+        Err(e) => {
+            log::error!(
+                "Error while checking faenge for: {:?}, error: {:?}",
+                &auth_info.0,
+                e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ForgetFangReq {
+    pub url: String,
+}
+pub async fn forget(
+    State(state): State<AppState>,
+    auth_info: AuthInfo,
+    Json(payload): Json<ForgetFangReq>,
+) -> StatusCode {
+    use crate::schema::faenge::dsl::*;
+
+    log::debug!("Received forget request: {:?}", payload);
+
+    let mut db = match state.db.get() {
+        Ok(conn) => conn,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR,
+    };
+
+    let matching_faenge = Fang::belonging_to(&auth_info.0)
         .filter(url.eq(&payload.url))
         .filter(user_id.eq(&auth_info.0.id))
-        .count()
-        .get_result(db.deref_mut())
-    {
-        Ok(res) => match res {
+        .select(Fang::as_select())
+        .load(&mut db);
+
+    match matching_faenge {
+        Ok(res) => match res.len() {
             0 => StatusCode::NOT_FOUND,
-            1 => StatusCode::FOUND,
+            1 => {
+                let fang = res.first().unwrap();
+                match diesel::delete(faenge.filter(id.eq(fang.id))).execute(&mut db) {
+                    Ok(c) => {
+                        if c != 1 {
+                            log::error!(
+                                "Expected one delete row while deleting fang for: {:?}, got: {:?}",
+                                &auth_info.0,
+                                c,
+                            );
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        } else {
+                            StatusCode::OK
+                        }
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Db delete error while deleting fang for: {:?}, error: {:?}",
+                            &auth_info.0,
+                            e
+                        );
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    }
+                }
+            }
             _ => {
                 log::error!(
                     "URL {:?} saved more than once by {:?}",
@@ -69,7 +150,7 @@ pub async fn has(
         },
         Err(e) => {
             log::error!(
-                "Error while listing faenge for: {:?}, error: {:?}",
+                "Db list error while deleting fang for: {:?}, error: {:?}",
                 &auth_info.0,
                 e
             );
@@ -93,7 +174,6 @@ pub async fn save(
 
     log::debug!("Received save request: {:?}", payload);
 
-    let new_fang = NewFang::new(payload.url, payload.title, auth_info.0.id);
     let mut db = match state.db.get() {
         Ok(conn) => conn,
         Err(_) => {
@@ -103,6 +183,28 @@ pub async fn save(
             );
         }
     };
+
+    // Check if URL already exists for this user
+    match url_exists_for_user(&mut db, &auth_info.0, &payload.url) {
+        Ok(true) => {
+            // TODO: Should we return something different here?
+            return (StatusCode::OK, "already caught".to_string());
+        }
+        Ok(false) => {
+            // Continue with save
+        }
+        Err(e) => {
+            log::error!(
+                "Error checking for duplicate URL {:?} for user {:?}: {:?}",
+                payload.url,
+                auth_info.0,
+                e
+            );
+            return (StatusCode::INTERNAL_SERVER_ERROR, "troubles".to_string());
+        }
+    }
+
+    let new_fang = NewFang::new(payload.url, payload.title, auth_info.0.id);
     match diesel::insert_into(faenge::table)
         .values(&new_fang)
         .execute(&mut db)

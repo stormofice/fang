@@ -7,6 +7,6 @@ browser.tabs.query({currentWindow: true, active: true}).then((tabs) => {
         console.error("Unexpected active tab count", tabs);
     } else {
         const activeTab = tabs[0];
-        browser.runtime.sendMessage({action: "saveUrl", url: activeTab.url, title: activeTab.title});
+        browser.runtime.sendMessage({action: "tabInteraction", url: activeTab.url, title: activeTab.title});
     }
 }, (err) => console.error(err));
