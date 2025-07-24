@@ -4,10 +4,29 @@ browser.runtime.onInstalled.addListener(() => {
 
 async function setToolbarButton(saved) {
     console.log("Setting toolbar button", saved);
+    // TODO(cross): I think svg icon support was not universal
     await browser.browserAction.setIcon({path: saved ? "icons/saved.svg" : "icons/save.svg"});
     await browser.browserAction.setTitle({title: saved ? "Forget" : "Save"});
 }
 
+// === Extension Internal Message Handling ===
+// TODO(cross): I think chrome has other syntax for this
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log("[BG] Received runtime message", message);
+
+    if ("action" in message) {
+        switch (message.action) {
+            case "saveUrl":
+                saveTab(message.url, message.title);
+                break;
+        }
+    } else {
+        console.error("Malformed message", message);
+    }
+});
+
+
+// === Backend Handling & Caching ===
 const knownUrlsCache = new Map();
 
 async function isUrlKnown(url) {
@@ -31,33 +50,32 @@ async function isUrlKnown(url) {
     }
 }
 
-async function saveTab(tabInfo) {
+async function saveTab(url, title) {
+    if (await isUrlKnown(url)) {
+        // TODO: Unsave the tab
+        return;
+    }
+
     const options = await browser.storage.sync.get();
 
     const resp = await fetch(`${options.backend_url}/faenge/save`, {
         method: "POST",
         body: JSON.stringify({
-            title: tabInfo.title,
-            url: tabInfo.url,
+            title: title,
+            url: url,
         }),
         headers: {"Content-Type": "application/json", "X-Api-Key": options.api_key},
     });
 
     if (resp.status === 200) {
-        knownUrlsCache.set(tabInfo.url, true);
+        knownUrlsCache.set(url, true);
         await setToolbarButton(true);
     } else {
         console.error(resp);
     }
 }
 
-browser.browserAction.onClicked.addListener(async (currentTab) => {
-    if (await isUrlKnown(currentTab.url)) {
-        /// Unsave
-        return;
-    }
-    await saveTab(currentTab);
-});
+// === Tab handling ===
 
 browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tabInfo) => {
     if (changeInfo.status === "complete") {

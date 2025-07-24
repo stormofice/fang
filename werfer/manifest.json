@@ -16,7 +16,8 @@
   "browser_action": {
     "default_icon": "icons/save.svg",
     "default_title": "Save",
-    "default_area": "navbar"
+    "default_area": "navbar",
+    "default_popup": "popup/toolbar_popup.html"
   },
   "background": {
     "scripts": [
