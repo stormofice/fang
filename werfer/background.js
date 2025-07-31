@@ -1,6 +1,18 @@
-browser.runtime.onInstalled.addListener(() => {
+browser.runtime.onInstalled.addListener(async () => {
     console.log("Werfer loaded");
+
+    await populateSettings();
 });
+
+async function populateSettings() {
+    const options = await browser.storage.sync.get();
+    if (options.backend_url === undefined) {
+        options.backend_url = "http://localhost:4567";
+    }
+    if (options.encryption_key === undefined) {
+        options.encryption_key = "none";
+    }
+}
 
 async function setToolbarButton(saved) {
     console.log("Setting toolbar button", saved);
@@ -41,6 +53,15 @@ async function handleTabInteractionMessage(url, title) {
 }
 
 // === Backend Handling & Caching ===
+
+async function encrypt(text) {
+    const options = await browser.storage.sync.get();
+    if (options.encryption_key !== "none") {}
+    else {
+        return text;
+    }
+}
+
 const knownUrlsCache = new Map();
 
 async function isUrlKnown(url) {
