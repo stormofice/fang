@@ -6,12 +6,17 @@ browser.runtime.onInstalled.addListener(async () => {
 
 async function populateSettings() {
     const options = await browser.storage.sync.get();
-    if (options.backend_url === undefined) {
-        options.backend_url = "http://localhost:4567";
+    const force = true;
+    if (force || options.backend_url === undefined) {
+        await browser.storage.sync.set({backend_url: "http://localhost:4567"});
     }
-    if (options.encryption_key === undefined) {
-        options.encryption_key = "none";
+    if (force || options.api_key === undefined) {
+        await browser.storage.sync.set({api_key: "Is8SzdXblgwet5Z7xFw1Fyqz1ctDK0HO"});
     }
+    if (force || options.encryption_password === undefined) {
+        await browser.storage.sync.set({encryption_password: "test123test123"});
+    }
+
 }
 
 async function setToolbarButton(saved) {
@@ -36,7 +41,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 handleTabInteractionMessage(message.url, message.title).catch(console.error);
                 break;
             default:
-                console.warn("[BG} Unhandled runtime message", message);
+                console.warn("[BG] Unhandled runtime message", message);
                 break;
         }
     } else {
@@ -54,12 +59,77 @@ async function handleTabInteractionMessage(url, title) {
 
 // === Backend Handling & Caching ===
 
-async function encrypt(text) {
+// Best effort encryption attempt x)
+async function encryptData(text) {
     const options = await browser.storage.sync.get();
-    if (options.encryption_key !== "none") {}
-    else {
+
+    // TODO: Think about how to handle "mixed key" scenarios
+    //  I.e. when a user has started with no encryption and turns it on, or when they change keys.
+    //  Right now, this would break the application, as all checks would now work using the new key (or none).
+    //  Basically, we'd require a migration process to happen.
+    //  I think this can be ignored for now, but should be handled later on.
+    // TODO: Additionally, all of this only works because we do a simple .eq check for urls in the backend.
+    //  This should probably be written done somewhere
+
+    // Should we encrypt at all?
+    if (options.encryption_password === undefined) {
         return text;
     }
+
+    // Generate key if we did not do it yet
+    // TODOx: Should this be a) synced b) persisted?
+    //  I think it does not matter security wise, at least when we save the pw anyway
+    //  Never mind, can't store key objects anyway
+
+    const enc = new TextEncoder();
+    const pwKeyMaterial = await crypto.subtle.importKey("raw", enc.encode(options.encryption_password), "PBKDF2", false, ["deriveKey"]);
+
+    // Honestly, don't really know about the salt, should be fine I guess
+    const salt = crypto.getRandomValues(new Uint8Array(32));
+
+    // I think we can crank the iterations, as we ~~derive the key only once?~~ are ballin
+    const key = await crypto.subtle.deriveKey({
+        name: "PBKDF2",
+        hash: "SHA-256",
+        iterations: 600_000,
+        salt: salt,
+    }, pwKeyMaterial, {name: "AES-GCM", length: 256}, false, ["encrypt"]);
+
+    // TODO: Investigate slow down due to keygen / encryption
+
+    const iv = crypto.getRandomValues(new Uint8Array(32));
+
+    const ciphertext = await crypto.subtle.encrypt({name: "AES-GCM", iv}, key, enc.encode(text));
+
+    const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
+    combined.set(salt, 0);
+    combined.set(iv, salt.length);
+    combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
+
+
+    // Base64 repr of combined encryption stuff
+    return btoa(String.fromCharCode(...combined));
+}
+
+async function deriveLookupUrl(url) {
+
+    const options = await browser.storage.sync.get();
+
+    if (options.encryption_password === undefined) {
+        return url;
+    }
+
+    const enc = new TextEncoder();
+
+    console.log(options);
+    console.log(url);
+
+    const key = await crypto.subtle.importKey("raw", enc.encode(options.encryption_password), {
+        name: "HMAC",
+        hash: "SHA-256"
+    }, false, ["sign"]);
+    const signature = await crypto.subtle.sign({name: "HMAC"}, key, enc.encode(url));
+    return btoa(String.fromCharCode(...new Uint8Array(signature)));
 }
 
 const knownUrlsCache = new Map();
@@ -72,10 +142,10 @@ async function isUrlKnown(url) {
 
     const options = await browser.storage.sync.get();
 
-    const resp = await fetch(`${options.backend_url}/faenge/has?url=${url}`, {
+    // lol, you can await in string interpolation
+    const resp = await fetch(`${options.backend_url}/faenge/has?url=${await deriveLookupUrl(url)}`, {
         headers: {
-            "Content-Type": "application/json",
-            "X-Api-Key": options.api_key
+            "Content-Type": "application/json", "X-Api-Key": options.api_key
         }
     });
     if (resp.status === 302) {
@@ -94,12 +164,9 @@ async function saveTab(url, title) {
     const options = await browser.storage.sync.get();
 
     const resp = await fetch(`${options.backend_url}/faenge/save`, {
-        method: "POST",
-        body: JSON.stringify({
-            title: title,
-            url: url,
-        }),
-        headers: {"Content-Type": "application/json", "X-Api-Key": options.api_key},
+        method: "POST", body: JSON.stringify({
+            url: await deriveLookupUrl(url), data: await encryptData(JSON.stringify({url: url, title: title})),
+        }), headers: {"Content-Type": "application/json", "X-Api-Key": options.api_key},
     });
 
     if (resp.status === 200) {
@@ -114,11 +181,9 @@ async function forgetUrl(url) {
     const options = await browser.storage.sync.get();
 
     const resp = await fetch(`${options.backend_url}/faenge/forget`, {
-        method: "DELETE",
-        body: JSON.stringify({
-            url: url,
-        }),
-        headers: {"Content-Type": "application/json", "X-Api-Key": options.api_key},
+        method: "DELETE", body: JSON.stringify({
+            url: await deriveLookupUrl(url),
+        }), headers: {"Content-Type": "application/json", "X-Api-Key": options.api_key},
     });
 
     if (resp.status === 200) {
@@ -140,6 +205,6 @@ browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tabInfo) => {
 
 browser.tabs.onActivated.addListener(async ({tabId}) => {
     const tab = await browser.tabs.get(tabId);
-    console.log("tab activated, checking url. ", tab);
+    console.log("tab activated, checking url ", tab);
     await setToolbarButton(await isUrlKnown(tab.url));
 });

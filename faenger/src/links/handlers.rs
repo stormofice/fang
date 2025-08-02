@@ -16,7 +16,7 @@ fn url_exists_for_user(
     use crate::schema::faenge::dsl::*;
 
     let count: i64 = Fang::belonging_to(user)
-        .filter(url.eq(url_param))
+        .filter(lookup_url.eq(url_param))
         .filter(user_id.eq(user.id))
         .count()
         .get_result(db.deref_mut())?;
@@ -106,7 +106,7 @@ pub async fn forget(
     };
 
     let matching_faenge = Fang::belonging_to(&auth_info.0)
-        .filter(url.eq(&payload.url))
+        .filter(lookup_url.eq(&payload.url))
         .filter(user_id.eq(&auth_info.0.id))
         .select(Fang::as_select())
         .load(&mut db);
@@ -162,7 +162,7 @@ pub async fn forget(
 #[derive(Deserialize, Debug)]
 pub struct SaveFangReq {
     pub url: String,
-    pub title: Option<String>,
+    pub data: String,
 }
 
 pub async fn save(
@@ -204,7 +204,7 @@ pub async fn save(
         }
     }
 
-    let new_fang = NewFang::new(payload.url, payload.title, auth_info.0.id);
+    let new_fang = NewFang::new(payload.url, payload.data, auth_info.0.id);
     match diesel::insert_into(faenge::table)
         .values(&new_fang)
         .execute(&mut db)

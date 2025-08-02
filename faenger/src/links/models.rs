@@ -1,5 +1,4 @@
 use crate::users::models::User;
-use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -11,9 +10,8 @@ pub struct Fang {
     // (Ab)using skip serde functionality to limit what is returned to users
     #[serde(skip_serializing)]
     pub id: i32,
-    pub url: String,
-    pub title: Option<String>,
-    pub time_created: String,
+    pub lookup_url: String,
+    pub data: String,
     #[serde(skip_serializing)]
     pub user_id: i32,
 }
@@ -22,18 +20,16 @@ pub struct Fang {
 #[diesel(table_name = crate::schema::faenge)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewFang {
-    url: String,
-    title: Option<String>,
-    time_created: String,
+    lookup_url: String,
+    data: String,
     user_id: i32,
 }
 
 impl NewFang {
-    pub fn new(url: String, title: Option<String>, user_id: i32) -> NewFang {
+    pub fn new(lookup_url: String, data: String, user_id: i32) -> NewFang {
         NewFang {
-            url,
-            title,
-            time_created: Utc::now().to_rfc3339(),
+            lookup_url,
+            data,
             user_id,
         }
     }
