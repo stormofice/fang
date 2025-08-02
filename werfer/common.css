@@ -1,0 +1,41 @@
+body {
+    background-color: #1e1e2e;
+    color: #cdd6f4;
+    font-family: sans-serif;
+}
+
+.flex_column {
+    display: flex;
+    flex-direction: column;
+}
+
+.overview_url_view {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.overview_url_card {
+    margin: 0 0 0 0;
+    padding: 0 0 0 0;
+    background-color: #181825;
+}
+
+.url_entry_title {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin: 0 0 4px 0;
+}
+
+.url_entry_url {
+    font-size: 1.1em;
+    margin: 0;
+}
+
+a:link {
+    color: #89b4fa;
+}
+
+a:visited {
+    color: #cba6f7;
+}

@@ -2,9 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Title</title>
+  <link rel="stylesheet" href="/common.css"/>
+  <title>Werfer Overview</title>
 </head>
 <body>
-overview??
+<h1>Saved URLs</h1>
+
+<div class="overview_url_view">
+<!-- Populated by javascript -->
+</div>
+
+
+<template id="url_entry">
+  <div class="overview_url_card">
+    <div class="flex_column">
+      <p class="url_entry_title"></p>
+      <a class="url_entry_url"></a>
+    </div>
+  </div>
+</template>
+
+<script src="overview.js"></script>
+
 </body>
+
 </html>

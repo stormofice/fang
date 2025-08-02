@@ -38,7 +38,12 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // Adding async to the listener does not work (I think), due to the warnings on:
                 // https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onMessage
                 // Let's just hope for the best 👍
-                handleTabInteractionMessage(message.url, message.title).catch(console.error);
+                handleTabInteractionMessage(message.url, message.title).then((didSave) => {
+                    sendResponse({didSave: didSave});
+                }).catch(console.error);
+                break;
+            case "getFaenge":
+                getAll().then((faenge) => sendResponse({faenge: faenge})).catch(console.error);
                 break;
             default:
                 console.warn("[BG] Unhandled runtime message", message);
@@ -47,13 +52,16 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else {
         console.error("Malformed message", message);
     }
+    return true;
 });
 
 async function handleTabInteractionMessage(url, title) {
     if (await isUrlKnown(url)) {
         await forgetUrl(url);
+        return false;
     } else {
         await saveTab(url, title);
+        return true;
     }
 }
 
@@ -111,6 +119,31 @@ async function encryptData(text) {
     return btoa(String.fromCharCode(...combined));
 }
 
+async function decryptData(data) {
+    const options = await browser.storage.sync.get();
+
+    if (options.encryption_password === undefined) {
+        return data;
+    }
+    const enc = new TextEncoder();
+    const pwKeyMaterial = await crypto.subtle.importKey("raw", enc.encode(options.encryption_password), "PBKDF2", false, ["deriveKey"]);
+
+    const dataBytes = new Uint8Array(atob(data).split('').map(c => c.charCodeAt(0)));
+    const salt = dataBytes.slice(0, 32);
+    const iv = dataBytes.slice(32, 64);
+    const encData = dataBytes.slice(64);
+
+    const key = await crypto.subtle.deriveKey({
+        name: "PBKDF2",
+        hash: "SHA-256",
+        iterations: 600_000,
+        salt: salt,
+    }, pwKeyMaterial, {name: "AES-GCM", length: 256}, false, ["decrypt"]);
+
+    const decrypted = await crypto.subtle.decrypt({name: "AES-GCM", iv}, key, encData);
+    return JSON.parse(new TextDecoder().decode(decrypted));
+}
+
 async function deriveLookupUrl(url) {
 
     const options = await browser.storage.sync.get();
@@ -120,9 +153,6 @@ async function deriveLookupUrl(url) {
     }
 
     const enc = new TextEncoder();
-
-    console.log(options);
-    console.log(url);
 
     const key = await crypto.subtle.importKey("raw", enc.encode(options.encryption_password), {
         name: "HMAC",
@@ -192,6 +222,20 @@ async function forgetUrl(url) {
     } else {
         console.error(resp);
     }
+}
+
+async function getAll() {
+    const options = await browser.storage.sync.get();
+    const resp = await fetch(`${options.backend_url}/faenge/list`, {
+        headers: {
+            "Content-Type": "application/json", "X-Api-Key": options.api_key
+        }
+    });
+
+    const encData = await resp.json();
+    const data = await Promise.all(encData.map(async (fang) => await decryptData(fang.data)));
+
+    return data;
 }
 
 // === Tab handling ===
