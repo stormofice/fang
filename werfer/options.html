@@ -8,11 +8,17 @@
 
 <body>
 <form>
-  <label for="backend_url">Backend URL</label>
-  <input type="text" id="backend_url" name="backend_url" />
-  <label for="api_key">API Key</label>
-  <input type="text" id="api_key" name="api_key" />
-  <button type="submit">Save</button>
+
+  <div style="display: flex; flex-direction: column">
+    <label for="backend_url">Backend URL</label>
+    <input type="text" id="backend_url" name="backend_url" />
+    <label for="api_key">API Key</label>
+    <input type="text" id="api_key" name="api_key" />
+    <label for="encryption_password">Encryption Passowrd</label>
+    <input type="text" id="encryption_password" name="encryption_password" />
+    <button type="submit">Save</button>
+  </div>
+
 </form>
 <script src="options.js"></script>
 </body>

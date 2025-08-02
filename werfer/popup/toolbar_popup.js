@@ -10,3 +10,9 @@ browser.tabs.query({currentWindow: true, active: true}).then((tabs) => {
         browser.runtime.sendMessage({action: "tabInteraction", url: activeTab.url, title: activeTab.title});
     }
 }, (err) => console.error(err));
+
+const overview_btn = document.getElementById("overview_btn");
+overview_btn.addEventListener("click", async () => {
+    console.log("Overview btn click");
+    await browser.tabs.create({url: "/overview.html"});
+});
