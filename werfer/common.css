@@ -4,9 +4,22 @@ body {
     font-family: sans-serif;
 }
 
+p {
+    font-size: 1.1em;
+}
+
 .flex_column {
     display: flex;
     flex-direction: column;
+}
+
+.flex_row {
+    display: flex;
+    flex-direction: row;
+}
+
+.popup_main {
+    gap: 4px;
 }
 
 .overview_url_view {
@@ -21,10 +34,23 @@ body {
     background-color: #181825;
 }
 
+.green {
+    color: #a6e3a1;
+}
+
+.red {
+    color: #f38ba8;
+}
+
 .url_entry_title {
     font-size: 1.2em;
     font-weight: bold;
     margin: 0 0 4px 0;
+}
+
+.url_entry_time_created {
+    margin: 0;
+    font-size: 1.05em;
 }
 
 .url_entry_url {
@@ -38,4 +64,19 @@ a:link {
 
 a:visited {
     color: #cba6f7;
+}
+
+button {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: none;
+    font-size: 1.1em;
+}
+
+button:hover {
+    background-color: #45475a;
+}
+
+.url_entry_forget_btn {
+    color: #f38ba8;
 }

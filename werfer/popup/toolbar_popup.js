@@ -14,6 +14,7 @@ browser.tabs.query({currentWindow: true, active: true}).then((tabs) => {
         browser.runtime.sendMessage({action: "tabInteraction", url: activeTab.url, title: activeTab.title}).then(
             (response) => {
                 actionTitle.textContent = response.didSave ? "Nice catch!" : "I forgor :(";
+                actionTitle.classList.add(response.didSave ? "green" : "red");
             }
         );
     }

@@ -9,15 +9,21 @@
 <h1>Saved URLs</h1>
 
 <div class="overview_url_view">
-<!-- Populated by javascript -->
+<!-- Populated by Javascript -->
 </div>
 
 
 <template id="url_entry">
   <div class="overview_url_card">
     <div class="flex_column">
-      <p class="url_entry_title"></p>
+      <div class="flex_row" style="justify-content: space-between">
+        <p class="url_entry_title"></p>
+        <p class="url_entry_time_created"></p>
+      </div>
       <a class="url_entry_url"></a>
+      <div class="flex_row" style="justify-content: flex-start">
+        <button class="url_entry_forget_btn">Forget</button>
+      </div>
     </div>
   </div>
 </template>

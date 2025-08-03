@@ -195,7 +195,10 @@ async function saveTab(url, title) {
 
     const resp = await fetch(`${options.backend_url}/faenge/save`, {
         method: "POST", body: JSON.stringify({
-            url: await deriveLookupUrl(url), data: await encryptData(JSON.stringify({url: url, title: title})),
+            url: await deriveLookupUrl(url),
+            data: await encryptData(JSON.stringify(
+                {url: url, title: title, time_created: new Date().toISOString()}
+            )),
         }), headers: {"Content-Type": "application/json", "X-Api-Key": options.api_key},
     });
 
