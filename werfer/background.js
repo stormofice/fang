@@ -6,17 +6,18 @@ browser.runtime.onInstalled.addListener(async () => {
 
 async function populateSettings() {
     const options = await browser.storage.sync.get();
-    const force = true;
-    if (force || options.backend_url === undefined) {
-        await browser.storage.sync.set({backend_url: "http://localhost:4567"});
-    }
-    if (force || options.api_key === undefined) {
-        await browser.storage.sync.set({api_key: "Is8SzdXblgwet5Z7xFw1Fyqz1ctDK0HO"});
-    }
-    if (force || options.encryption_password === undefined) {
-        await browser.storage.sync.set({encryption_password: "test123test123"});
-    }
+    const force = false;
+    const dev = false;
 
+    const defaults = {
+        backend_url: dev ? "http://localhost:4567" : "set-your-own",
+        api_key: dev ? "Is8SzdXblgwet5Z7xFw1Fyqz1ctDK0HO" : "set-your-own",
+        encryption_password: dev ? "test123test123" : "set-your-own",
+    };
+
+    if (force) {
+        await browser.storage.sync.set(defaults);
+    }
 }
 
 async function setToolbarButton(saved) {

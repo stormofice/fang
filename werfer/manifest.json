@@ -1,9 +1,9 @@
 {
   "manifest_version": 2,
   "name": "Werfer",
-  "version": "0.1",
-  "description": "",
-  "homepage_url": "https://a.b.de",
+  "version": "0.1.0",
+  "description": "Minimal (encrypted) link catcher with support for custom backends",
+  "homepage_url": "https://github.com/stormofice/fang",
   "icons": {
     "64": "icons/ext.svg"
   },
@@ -30,7 +30,8 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "werfer@test.temp"
+      "id": "werfer@github.stormofice",
+      "update_url": "https://raw.githubusercontent.com/stormofice/fang/refs/heads/main/werfer/update_manifest.json"
     }
   }
 }
