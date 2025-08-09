@@ -1,14 +1,14 @@
-use crate::users::models::{NewUser, User};
+use super::extractors::AuthInfo;
 use crate::AppState;
-use argon2::password_hash::rand_core::OsRng;
+use crate::users::models::{NewUser, User};
 use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::Json;
 use diesel::prelude::*;
 use serde::Deserialize;
-use super::extractors::AuthInfo;
 
 #[derive(Deserialize)]
 pub struct UserAuthReq {
@@ -20,6 +20,16 @@ pub async fn register(
     State(state): State<AppState>,
     Json(payload): Json<UserAuthReq>,
 ) -> (StatusCode, String) {
+    {
+        let cfg = state.config.read().unwrap();
+        if !cfg.allow_signups {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Sorry, signups are currently disabled".to_string(),
+            );
+        }
+    }
+
     use crate::schema::users;
 
     // surely the defaults will be sane
@@ -40,7 +50,12 @@ pub async fn register(
     let db_response = {
         let mut db = match state.db.get() {
             Ok(conn) => conn,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Database connection timeout".to_string()),
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database connection timeout".to_string(),
+                );
+            }
         };
         diesel::insert_into(users::table)
             .values(&new_user)
@@ -64,7 +79,12 @@ pub async fn login(
     let user_rows = {
         let mut db = match state.db.get() {
             Ok(conn) => conn,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Database connection timeout".to_string()),
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database connection timeout".to_string(),
+                );
+            }
         };
         match users
             .filter(name.eq(&payload.username))

@@ -11,8 +11,7 @@ async function populateSettings() {
 
     const defaults = {
         backend_url: dev ? "http://localhost:4567" : "set-your-own",
-        api_key: dev ? "Is8SzdXblgwet5Z7xFw1Fyqz1ctDK0HO" : "set-your-own",
-        encryption_password: dev ? "test123test123" : "set-your-own",
+        api_key: dev ? "IHsw2IQoPYYVT5c8d9V2JRQ0JuPq27qV" : "set-your-own",
     };
 
     if (force) {
@@ -67,102 +66,6 @@ async function handleTabInteractionMessage(url, title) {
 }
 
 // === Backend Handling & Caching ===
-
-// Best effort encryption attempt x)
-async function encryptData(text) {
-    const options = await browser.storage.sync.get();
-
-    // TODO: Think about how to handle "mixed key" scenarios
-    //  I.e. when a user has started with no encryption and turns it on, or when they change keys.
-    //  Right now, this would break the application, as all checks would now work using the new key (or none).
-    //  Basically, we'd require a migration process to happen.
-    //  I think this can be ignored for now, but should be handled later on.
-    // TODO: Additionally, all of this only works because we do a simple .eq check for urls in the backend.
-    //  This should probably be written done somewhere
-
-    // Should we encrypt at all?
-    if (options.encryption_password === undefined) {
-        return text;
-    }
-
-    // Generate key if we did not do it yet
-    // TODOx: Should this be a) synced b) persisted?
-    //  I think it does not matter security wise, at least when we save the pw anyway
-    //  Never mind, can't store key objects anyway
-
-    const enc = new TextEncoder();
-    const pwKeyMaterial = await crypto.subtle.importKey("raw", enc.encode(options.encryption_password), "PBKDF2", false, ["deriveKey"]);
-
-    // Honestly, don't really know about the salt, should be fine I guess
-    const salt = crypto.getRandomValues(new Uint8Array(32));
-
-    // I think we can crank the iterations, as we ~~derive the key only once?~~ are ballin
-    const key = await crypto.subtle.deriveKey({
-        name: "PBKDF2",
-        hash: "SHA-256",
-        iterations: 600_000,
-        salt: salt,
-    }, pwKeyMaterial, {name: "AES-GCM", length: 256}, false, ["encrypt"]);
-
-    // TODO: Investigate slow down due to keygen / encryption
-
-    const iv = crypto.getRandomValues(new Uint8Array(32));
-
-    const ciphertext = await crypto.subtle.encrypt({name: "AES-GCM", iv}, key, enc.encode(text));
-
-    const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
-    combined.set(salt, 0);
-    combined.set(iv, salt.length);
-    combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
-
-
-    // Base64 repr of combined encryption stuff
-    return btoa(String.fromCharCode(...combined));
-}
-
-async function decryptData(data) {
-    const options = await browser.storage.sync.get();
-
-    if (options.encryption_password === undefined) {
-        return data;
-    }
-    const enc = new TextEncoder();
-    const pwKeyMaterial = await crypto.subtle.importKey("raw", enc.encode(options.encryption_password), "PBKDF2", false, ["deriveKey"]);
-
-    const dataBytes = new Uint8Array(atob(data).split('').map(c => c.charCodeAt(0)));
-    const salt = dataBytes.slice(0, 32);
-    const iv = dataBytes.slice(32, 64);
-    const encData = dataBytes.slice(64);
-
-    const key = await crypto.subtle.deriveKey({
-        name: "PBKDF2",
-        hash: "SHA-256",
-        iterations: 600_000,
-        salt: salt,
-    }, pwKeyMaterial, {name: "AES-GCM", length: 256}, false, ["decrypt"]);
-
-    const decrypted = await crypto.subtle.decrypt({name: "AES-GCM", iv}, key, encData);
-    return JSON.parse(new TextDecoder().decode(decrypted));
-}
-
-async function deriveLookupUrl(url) {
-
-    const options = await browser.storage.sync.get();
-
-    if (options.encryption_password === undefined) {
-        return url;
-    }
-
-    const enc = new TextEncoder();
-
-    const key = await crypto.subtle.importKey("raw", enc.encode(options.encryption_password), {
-        name: "HMAC",
-        hash: "SHA-256"
-    }, false, ["sign"]);
-    const signature = await crypto.subtle.sign({name: "HMAC"}, key, enc.encode(url));
-    return btoa(String.fromCharCode(...new Uint8Array(signature)));
-}
-
 const knownUrlsCache = new Map();
 
 async function isUrlKnown(url) {
@@ -174,7 +77,7 @@ async function isUrlKnown(url) {
     const options = await browser.storage.sync.get();
 
     // lol, you can await in string interpolation
-    const resp = await fetch(`${options.backend_url}/faenge/has?url=${await deriveLookupUrl(url)}`, {
+    const resp = await fetch(`${options.backend_url}/faenge/has?url=${url}`, {
         headers: {
             "Content-Type": "application/json", "X-Api-Key": options.api_key
         }
@@ -196,10 +99,8 @@ async function saveTab(url, title) {
 
     const resp = await fetch(`${options.backend_url}/faenge/save`, {
         method: "POST", body: JSON.stringify({
-            url: await deriveLookupUrl(url),
-            data: await encryptData(JSON.stringify(
-                {url: url, title: title, time_created: new Date().toISOString()}
-            )),
+            url,
+            title,
         }), headers: {"Content-Type": "application/json", "X-Api-Key": options.api_key},
     });
 
@@ -216,7 +117,7 @@ async function forgetUrl(url) {
 
     const resp = await fetch(`${options.backend_url}/faenge/forget`, {
         method: "DELETE", body: JSON.stringify({
-            url: await deriveLookupUrl(url),
+            url,
         }), headers: {"Content-Type": "application/json", "X-Api-Key": options.api_key},
     });
 
@@ -236,10 +137,7 @@ async function getAll() {
         }
     });
 
-    const encData = await resp.json();
-    const data = await Promise.all(encData.map(async (fang) => await decryptData(fang.data)));
-
-    return data;
+    return await resp.json();
 }
 
 // === Tab handling ===

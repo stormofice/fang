@@ -16,3 +16,6 @@ chrono = { version = "0.4.41", features = ["serde"] }
 pretty_env_logger = "0.5.0"
 log = { version = "0.4.27", features = ["std"] }
 r2d2 = "0.8.10"
+config = { version = "0.15.13", features = ["toml"] }
+toml = "0.9.5"
+anyhow = { version = "1.0.98", features = ["backtrace"] }

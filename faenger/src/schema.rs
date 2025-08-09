@@ -3,8 +3,9 @@
 diesel::table! {
     faenge (id) {
         id -> Integer,
-        lookup_url -> Text,
-        data -> Text,
+        time_created -> Text,
+        title -> Nullable<Text>,
+        url -> Text,
         user_id -> Integer,
     }
 }

@@ -2,7 +2,9 @@
 use diesel::SqliteConnection;
 use diesel::r2d2::ConnectionManager;
 use dotenvy::dotenv;
+use serde::Deserialize;
 use std::env;
+use std::sync::{Arc, RwLock};
 
 pub mod auth;
 pub mod links;
@@ -21,18 +23,31 @@ fn setup_database() -> DbPool {
         .expect("Could not create database pool")
 }
 
+#[derive(Debug, Deserialize)]
+pub struct FaengerConfig {
+    pub allow_signups: bool,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: DbPool,
+    pub config: Arc<RwLock<FaengerConfig>>,
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     pretty_env_logger::init_timed();
     dotenv().ok();
 
+    let config: FaengerConfig = config::Config::builder()
+        .add_source(config::File::with_name("faenger.toml").required(true))
+        .build()?
+        .try_deserialize()?;
+    log::debug!("Config: {:?}", &config);
+
     let state = AppState {
         db: setup_database(),
+        config: Arc::new(RwLock::new(config)),
     };
 
     let app = routes::create_router().with_state(state);
@@ -43,5 +58,5 @@ async fn main() {
 
     axum::serve(listener, app)
         .await
-        .expect("Axum stopped serving 😤")
+        .map_err(|err| anyhow::anyhow!(err))
 }

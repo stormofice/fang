@@ -10,8 +10,9 @@ pub struct Fang {
     // (Ab)using skip serde functionality to limit what is returned to users
     #[serde(skip_serializing)]
     pub id: i32,
-    pub lookup_url: String,
-    pub data: String,
+    pub time_created: String,
+    pub title: Option<String>,
+    pub url: String,
     #[serde(skip_serializing)]
     pub user_id: i32,
 }
@@ -20,16 +21,18 @@ pub struct Fang {
 #[diesel(table_name = crate::schema::faenge)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewFang {
-    lookup_url: String,
-    data: String,
+    time_created: String,
+    title: Option<String>,
+    url: String,
     user_id: i32,
 }
 
 impl NewFang {
-    pub fn new(lookup_url: String, data: String, user_id: i32) -> NewFang {
+    pub fn new(title: Option<String>, url: String, user_id: i32) -> NewFang {
         NewFang {
-            lookup_url,
-            data,
+            time_created: chrono::Utc::now().to_rfc3339(),
+            title,
+            url,
             user_id,
         }
     }
