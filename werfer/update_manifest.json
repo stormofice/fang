@@ -1,7 +1,12 @@
 {
   "addons": {
     "werfer@github.stormofice": {
-      "updates": []
+      "updates": [
+        {
+          "version": "0.1.2",
+          "update_link": "https://github.com/stormofice/fang/releases/download/0.1.2/werfer.xpi"
+        }
+      ]
     }
   }
 }

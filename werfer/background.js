@@ -34,6 +34,11 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if ("action" in message) {
         switch (message.action) {
             case "tabInteraction":
+                // Skip internal URLs
+                if (message.url.startsWith("about:")) {
+                    break;
+                }
+
                 // We do NOT await here, but I think it is fine. We do not care about a response and only want it done.
                 // Adding async to the listener does not work (I think), due to the warnings on:
                 // https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onMessage
