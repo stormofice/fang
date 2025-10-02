@@ -26,6 +26,7 @@ browser.runtime.sendMessage({action: "getFaenge"}).then(
             fangForgetButton.addEventListener("click", (event) => {
                 console.log("Want to forget fang from overview", entry);
                 fangCardElement.remove();
+                browser.runtime.sendMessage({action: "forget", url: entry.url});
             });
 
             overviewContainer.appendChild(fangCard);

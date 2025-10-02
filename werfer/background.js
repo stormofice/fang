@@ -43,12 +43,17 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // Adding async to the listener does not work (I think), due to the warnings on:
                 // https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onMessage
                 // Let's just hope for the best 👍
+                // Edit: I think this is an issue, noticed "Error: Promised response from onMessage listener went out of scope"
+                //       I'll wait a bit to see if this matters matters or if it just matters.
                 handleTabInteractionMessage(message.url, message.title).then((didSave) => {
                     sendResponse({didSave: didSave});
                 }).catch(console.error);
                 break;
             case "getFaenge":
                 getAll().then((faenge) => sendResponse({faenge: faenge})).catch(console.error);
+                break;
+            case "forget":
+                forgetUrl(message.url).then(() => console.log(`[BG] Forgot ${message.url}`)).catch(console.error)
                 break;
             default:
                 console.warn("[BG] Unhandled runtime message", message);
@@ -99,7 +104,7 @@ async function isUrlKnown(url) {
     }
 }
 
-async function saveTab(url, title) {
+async function saveTab(url, title, set_btn = true) {
     const options = await browser.storage.sync.get();
 
     const resp = await fetch(`${options.backend_url}/faenge/save`, {
@@ -111,13 +116,14 @@ async function saveTab(url, title) {
 
     if (resp.status === 200) {
         knownUrlsCache.set(url, true);
-        await setToolbarButton(true);
+        if (set_btn)
+            await setToolbarButton(true);
     } else {
         console.error(resp);
     }
 }
 
-async function forgetUrl(url) {
+async function forgetUrl(url, set_btn = true) {
     const options = await browser.storage.sync.get();
 
     const resp = await fetch(`${options.backend_url}/faenge/forget`, {
@@ -128,7 +134,8 @@ async function forgetUrl(url) {
 
     if (resp.status === 200) {
         knownUrlsCache.set(url, false);
-        await setToolbarButton(false);
+        if (set_btn)
+            await setToolbarButton(false);
     } else {
         console.error(resp);
     }
@@ -158,4 +165,36 @@ browser.tabs.onActivated.addListener(async ({tabId}) => {
     const tab = await browser.tabs.get(tabId);
     console.log("tab activated, checking url ", tab);
     await setToolbarButton(await isUrlKnown(tab.url));
+});
+
+function onCtxMenuCreated() {
+    if (browser.runtime.lastError) {
+        console.log(`[BG] Error while creating ctx menu: ${browser.runtime.lastError}`);
+    }
+}
+
+
+// === Context menu setup ===
+browser.contextMenus.create(
+    {
+        id: "save-link-ctx",
+        title: "Save Link",
+        contexts: ["link"],
+        type: "normal",
+    },
+    onCtxMenuCreated,
+);
+
+browser.contextMenus.onClicked.addListener(async (info, _) => {
+    console.log(`[BG] Clicked ctx item ${info}`)
+    switch (info.menuItemId) {
+        case "save-link-ctx":
+            // TODO: This is not ideal, as the link text in most cases != the title when visiting the page
+            await saveTab(info.linkUrl, info.linkText, false);
+            console.log("[BG] Saved via ctx", info);
+            break;
+        default:
+            console.warn("[BG] Unhandled context click", info);
+            break;
+    }
 });
