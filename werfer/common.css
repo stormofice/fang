@@ -77,6 +77,15 @@ button:hover {
     background-color: #45475a;
 }
 
+.url_entry_btn {
+    margin: 0px 4px 0px 0px;
+    width: 180px;
+}
+
+.url_entry_resolve_lobsters_btn {
+    color: #fab387;
+}
+
 .url_entry_forget_btn {
     color: #f38ba8;
 }
