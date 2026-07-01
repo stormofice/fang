@@ -5,8 +5,10 @@ use dotenvy::dotenv;
 use serde::Deserialize;
 use std::env;
 use std::sync::{Arc, RwLock};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 pub mod auth;
+pub mod backlinks;
 pub mod links;
 pub mod routes;
 pub mod schema;
@@ -32,6 +34,7 @@ pub struct FaengerConfig {
 pub struct AppState {
     pub db: DbPool,
     pub config: Arc<RwLock<FaengerConfig>>,
+    pub backlink_tx: Sender<String>,
 }
 
 #[tokio::main]
@@ -45,9 +48,19 @@ async fn main() -> anyhow::Result<()> {
         .try_deserialize()?;
     log::debug!("Config: {:?}", &config);
 
+    let (tx, mut rx): (Sender<String>, Receiver<String>) = tokio::sync::mpsc::channel(32);
+
+    tokio::spawn(async move {
+        log::info!("Starting backlink resolver");
+        while let Some(url) = rx.recv().await {
+            log::info!("should resolve new backlink: {url}");
+        }
+    });
+
     let state = AppState {
         db: setup_database(),
         config: Arc::new(RwLock::new(config)),
+        backlink_tx: tx,
     };
 
     let app = routes::create_router().with_state(state);

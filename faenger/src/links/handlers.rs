@@ -7,6 +7,7 @@ use axum::http::StatusCode;
 use diesel::prelude::*;
 use serde::Deserialize;
 use std::ops::DerefMut;
+use std::time::Duration;
 
 fn url_exists_for_user(
     db: &mut r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
@@ -18,6 +19,7 @@ fn url_exists_for_user(
     let count: i64 = Fang::belonging_to(user)
         .filter(url.eq(url_param))
         .filter(user_id.eq(user.id))
+        .filter(soft_delete.eq(false))
         .count()
         .get_result(db.deref_mut())?;
 
@@ -37,11 +39,13 @@ pub async fn list(
     State(state): State<AppState>,
     auth_info: AuthInfo,
 ) -> (StatusCode, Json<Vec<Fang>>) {
+    use crate::schema::faenge::dsl::*;
     let mut db = match state.db.get() {
         Ok(conn) => conn,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(vec![])),
     };
     match Fang::belonging_to(&auth_info.0)
+        .filter(soft_delete.eq(false))
         .select(Fang::as_select())
         .load(&mut db)
     {
@@ -116,11 +120,16 @@ pub async fn forget(
             0 => StatusCode::NOT_FOUND,
             1 => {
                 let fang = res.first().unwrap();
-                match diesel::delete(faenge.filter(id.eq(fang.id))).execute(&mut db) {
+
+                match diesel::update(faenge.filter(id.eq(fang.id)))
+                    .set(soft_delete.eq(true))
+                    .execute(&mut db)
+                {
                     Ok(c) => {
                         if c != 1 {
                             log::error!(
-                                "Expected one delete row while deleting fang for: {:?}, got: {:?}",
+                                "Expected one update row while forgetting fang for: {:?}, got: \
+                                {:?}",
                                 &auth_info.0,
                                 c,
                             );
@@ -131,7 +140,7 @@ pub async fn forget(
                     }
                     Err(e) => {
                         log::error!(
-                            "Db delete error while deleting fang for: {:?}, error: {:?}",
+                            "Db update error while forgetting fang for: {:?}, error: {:?}",
                             &auth_info.0,
                             e
                         );
@@ -150,7 +159,7 @@ pub async fn forget(
         },
         Err(e) => {
             log::error!(
-                "Db list error while deleting fang for: {:?}, error: {:?}",
+                "Db list error while updating fang for: {:?}, error: {:?}",
                 &auth_info.0,
                 e
             );
@@ -201,6 +210,17 @@ pub async fn save(
                 e
             );
             return (StatusCode::INTERNAL_SERVER_ERROR, "troubles".to_string());
+        }
+    }
+
+    match state
+        .backlink_tx
+        .send_timeout(payload.url.clone(), Duration::from_millis(50))
+        .await
+    {
+        Ok(_) => {}
+        Err(err) => {
+            log::error!("URL backlink resolve backlog full: {:?}", err);
         }
     }
 

@@ -15,6 +15,8 @@ pub struct Fang {
     pub url: String,
     #[serde(skip_serializing)]
     pub user_id: i32,
+    #[serde(skip_serializing)]
+    pub soft_delete: bool,
 }
 
 #[derive(Insertable, Deserialize, Debug)]
