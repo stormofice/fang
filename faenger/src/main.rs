@@ -48,19 +48,17 @@ async fn main() -> anyhow::Result<()> {
         .try_deserialize()?;
     log::debug!("Config: {:?}", &config);
 
-    let (tx, mut rx): (Sender<String>, Receiver<String>) = tokio::sync::mpsc::channel(32);
+    let db = setup_database();
 
-    tokio::spawn(async move {
-        log::info!("Starting backlink resolver");
-        while let Some(url) = rx.recv().await {
-            log::info!("should resolve new backlink: {url}");
-        }
-    });
+    let (backlink_tx, backlink_rx): (Sender<String>, Receiver<String>) =
+        tokio::sync::mpsc::channel(32);
+
+    backlinks::resolver::create_backlink_resolver(backlink_rx, db.clone());
 
     let state = AppState {
-        db: setup_database(),
+        db,
         config: Arc::new(RwLock::new(config)),
-        backlink_tx: tx,
+        backlink_tx,
     };
 
     let app = routes::create_router().with_state(state);

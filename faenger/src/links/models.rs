@@ -2,7 +2,7 @@ use crate::users::models::User;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize)]
+#[derive(Queryable, Selectable, Identifiable, Associations, Debug, Serialize, Clone)]
 #[diesel(table_name = crate::schema::faenge)]
 #[diesel(belongs_to(User))]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]

@@ -1,5 +1,6 @@
 use crate::AppState;
 use crate::auth::handlers::{check, login, register};
+use crate::backlinks::handlers::resolve;
 use crate::links::handlers::{forget, has, list, save};
 use axum::Router;
 use axum::routing::{delete, get, post};
@@ -18,4 +19,5 @@ pub fn create_router() -> Router<AppState> {
         .route("/faenge/save", post(save))
         .route("/faenge/forget", delete(forget))
         .route("/faenge/has", get(has))
+        .route("/backlinks/resolve", get(resolve))
 }

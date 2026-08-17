@@ -8,31 +8,73 @@ use diesel::prelude::*;
 use serde::Deserialize;
 use std::ops::DerefMut;
 use std::time::Duration;
-
-fn url_exists_for_user(
+fn get_fang_for_user(
     db: &mut r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
     user: &crate::users::models::User,
     url_param: &str,
-) -> Result<bool, diesel::result::Error> {
+) -> Result<Option<Fang>, diesel::result::Error> {
     use crate::schema::faenge::dsl::*;
 
-    let count: i64 = Fang::belonging_to(user)
+    let urls: Vec<Fang> = Fang::belonging_to(user)
         .filter(url.eq(url_param))
         .filter(user_id.eq(user.id))
-        .filter(soft_delete.eq(false))
-        .count()
-        .get_result(db.deref_mut())?;
+        .load(db.deref_mut())?;
 
-    if count > 1 {
+    if urls.len() > 1 {
         log::warn!(
             "URL {:?} saved more than once ({} times) by user {:?}",
             url_param,
-            count,
+            urls.len(),
             user
         );
     }
 
-    Ok(count > 0)
+    if urls.len() == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(urls.first().cloned().unwrap()))
+    }
+}
+
+fn set_soft_delete_for_fang(
+    db: &mut r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
+    fang: &Fang,
+    delete: bool,
+) -> anyhow::Result<()> {
+    use crate::schema::faenge::dsl::faenge;
+    use crate::schema::faenge::{id, soft_delete};
+
+    match diesel::update(faenge.filter(id.eq(fang.id)))
+        .set(soft_delete.eq(delete))
+        .execute(db)
+    {
+        Ok(c) => {
+            if c != 1 {
+                log::error!(
+                    "Expected one update row while changing soft_delete for: \
+                                {:?}, \
+                                got: \
+                                {:?}",
+                    fang,
+                    c,
+                );
+                Err(anyhow::anyhow!(
+                    "Affected wrong number of rows during soft delete"
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        Err(e) => {
+            log::error!(
+                "Db update error while setting soft_delete for fang: {:?}, error: {:?}",
+                fang,
+                e
+            );
+
+            Err(anyhow::anyhow!("Uhh db has issues :("))
+        }
+    }
 }
 
 pub async fn list(
@@ -77,9 +119,15 @@ pub async fn has(
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR,
     };
 
-    match url_exists_for_user(&mut db, &auth_info.0, &payload.url) {
-        Ok(true) => StatusCode::FOUND,
-        Ok(false) => StatusCode::NOT_FOUND,
+    match get_fang_for_user(&mut db, &auth_info.0, &payload.url) {
+        Ok(Some(fang)) => {
+            if fang.soft_delete {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::FOUND
+            }
+        }
+        Ok(None) => StatusCode::NOT_FOUND,
         Err(e) => {
             log::error!(
                 "Error while checking faenge for: {:?}, error: {:?}",
@@ -120,32 +168,9 @@ pub async fn forget(
             0 => StatusCode::NOT_FOUND,
             1 => {
                 let fang = res.first().unwrap();
-
-                match diesel::update(faenge.filter(id.eq(fang.id)))
-                    .set(soft_delete.eq(true))
-                    .execute(&mut db)
-                {
-                    Ok(c) => {
-                        if c != 1 {
-                            log::error!(
-                                "Expected one update row while forgetting fang for: {:?}, got: \
-                                {:?}",
-                                &auth_info.0,
-                                c,
-                            );
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        } else {
-                            StatusCode::OK
-                        }
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Db update error while forgetting fang for: {:?}, error: {:?}",
-                            &auth_info.0,
-                            e
-                        );
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    }
+                match set_soft_delete_for_fang(&mut db, fang, true) {
+                    Ok(_) => StatusCode::OK,
+                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 }
             }
             _ => {
@@ -180,7 +205,6 @@ pub async fn save(
     Json(payload): Json<SaveFangReq>,
 ) -> (StatusCode, String) {
     use crate::schema::faenge;
-
     log::debug!("Received save request: {:?}", payload);
 
     let mut db = match state.db.get() {
@@ -194,12 +218,22 @@ pub async fn save(
     };
 
     // Check if URL already exists for this user
-    match url_exists_for_user(&mut db, &auth_info.0, &payload.url) {
-        Ok(true) => {
-            // TODO: Should we return something different here?
-            return (StatusCode::OK, "already caught".to_string());
+    match get_fang_for_user(&mut db, &auth_info.0, &payload.url) {
+        Ok(Some(fang)) => {
+            return if fang.soft_delete {
+                match set_soft_delete_for_fang(&mut db, &fang, false) {
+                    Ok(_) => (StatusCode::OK, "caught again".to_string()),
+                    Err(_) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Sorry something broke!".to_string(),
+                    ),
+                }
+            } else {
+                // TODO: Should we return something different here?
+                (StatusCode::OK, "already caught".to_string())
+            };
         }
-        Ok(false) => {
+        Ok(None) => {
             // Continue with save
         }
         Err(e) => {
