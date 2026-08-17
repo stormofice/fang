@@ -29,7 +29,7 @@ fn get_fang_for_user(
         );
     }
 
-    if urls.len() == 0 {
+    if urls.is_empty() {
         Ok(None)
     } else {
         Ok(Some(urls.first().cloned().unwrap()))

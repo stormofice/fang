@@ -37,37 +37,35 @@ browser.runtime.sendMessage({action: "getFaenge"}).then(
 
                 const resolveEntry = resolveMap.get(entry.url);
                 if (resolveEntry) {
-                    window.open(resolveEntry.lobsters, "_blank");
+                    // TODO: Also here, just choose first for now
+                    window.open(resolveEntry.lobsters_links[0], "_blank");
                     return;
                 }
 
-                const host = new URL(entry.url).host;
-                const response = await fetch(`https://lobste.rs/domains/${host}.json`);
+                const options = await browser.storage.sync.get();
+                const response = await fetch(`${options.backend_url}/backlinks/resolve?url=${entry.url}`, {
+                    headers: {
+                        "Content-Type": "application/json", "X-Api-Key": options.api_key
+                    }
+                });
 
                 if (response.status === 404) {
                     fangResolveLobstersButton.textContent = "No link!";
                     fangResolveLobstersButton.style.color = "#f38ba8";
                 } else {
-                    const stories = await response.json();
-                    console.log(stories);
-                    let found = false;
-                    for (const story of stories) {
-                        console.log(`${story.url} == ${entry.url}`);
-                        if (story.url === entry.url) {
-                            console.log("Found story", story);
-                            window.open(story.comments_url, "_blank");
-                            // TODO: Unify colors
-                            fangResolveLobstersButton.style.color = "#a6e3a1";
-                            fangResolveLobstersButton.textContent = "Open Lobsters";
-                            found = true;
-                            resolveMap.set(entry.url, {lobsters: story.comments_url});
-                            break;
-                        }
-                    }
+                    // {lobsters_links: [], hn_links: []}
+                    const backlinks = await response.json();
+                    console.log(backlinks);
 
-                    if (!found) {
-                        fangResolveLobstersButton.textContent = "No match!";
-                    }
+                    // TODO: For now just use the first one
+                    let first = backlinks.lobsters_links[0];
+
+                    console.log("Found story", first);
+                    window.open(first, "_blank");
+                    // TODO: Unify colors
+                    fangResolveLobstersButton.style.color = "#a6e3a1";
+                    fangResolveLobstersButton.textContent = "Open Lobsters";
+                    resolveMap.set(entry.url, backlinks);
                 }
             });
 

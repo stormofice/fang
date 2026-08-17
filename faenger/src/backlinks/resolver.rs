@@ -1,7 +1,7 @@
 use crate::DbPool;
 use anyhow::anyhow;
-use diesel::ExpressionMethods;
 use diesel::RunQueryDsl;
+use diesel::{ExpressionMethods, QueryDsl};
 use reqwest::Client;
 use serde::Deserialize;
 use tokio::sync::mpsc::Receiver;
@@ -16,7 +16,15 @@ pub fn create_backlink_resolver(mut rx: Receiver<String>, mut db: DbPool) {
         while let Some(url) = rx.recv().await {
             log::info!("should resolve new backlink: {url}");
 
-            // TODO: Check if we already resolved it
+            let known = has_backlinks(&mut db, &url).await.unwrap_or_else(|err| {
+                log::error!("Encountered error while resolving backlink: {:?}", err);
+                true
+            });
+
+            if known {
+                // TODO: Re-resolve periodically?
+                continue;
+            }
 
             match Url::parse(&url) {
                 Ok(url) => {
@@ -47,6 +55,24 @@ pub fn create_backlink_resolver(mut rx: Receiver<String>, mut db: DbPool) {
             }
         }
     });
+}
+
+async fn has_backlinks(db: &mut DbPool, req_url: &String) -> anyhow::Result<bool> {
+    use crate::schema::backlinks::dsl::*;
+
+    let mut db = db.get()?;
+
+    match backlinks.find(req_url).execute(&mut db)? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => {
+            log::warn!("More than one backlink for: {req_url}");
+            // TODO: Fail save for now and don't re-resolve. Should think about if we can
+            // eliminate all these "exists more than one cases". They should not be able to
+            // happen no?
+            Ok(true)
+        }
+    }
 }
 
 async fn store_backlinks(
