@@ -49,14 +49,14 @@ browser.runtime.sendMessage({action: "getFaenge"}).then(
                     }
                 });
 
-                if (response.status === 404) {
+                // {lobsters_links: [], hn_links: []}
+                const backlinks = await response.json();
+                console.log(backlinks);
+
+                if (response.status === 404 || backlinks.lobsters_links == null) {
                     fangResolveLobstersButton.textContent = "No link!";
                     fangResolveLobstersButton.style.color = "#f38ba8";
                 } else {
-                    // {lobsters_links: [], hn_links: []}
-                    const backlinks = await response.json();
-                    console.log(backlinks);
-
                     // TODO: For now just use the first one
                     let first = backlinks.lobsters_links[0];
 

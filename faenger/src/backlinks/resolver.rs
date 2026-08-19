@@ -1,117 +1,124 @@
 use crate::DbPool;
-use anyhow::anyhow;
+use crate::backlinks::join_backlinks;
+use crate::backlinks::models::Backlink;
+use crate::db_utils::coalesce;
+use anyhow::{anyhow, bail};
 use diesel::RunQueryDsl;
+use diesel::upsert::excluded;
 use diesel::{ExpressionMethods, QueryDsl};
 use reqwest::Client;
 use serde::Deserialize;
+use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 use url::Url;
 
-pub fn create_backlink_resolver(mut rx: Receiver<String>, mut db: DbPool) {
-    tokio::spawn(async move {
-        // TODO: Custom user-agent?
-        let http_client = Client::new();
-
-        log::info!("Starting backlink resolver");
-        while let Some(url) = rx.recv().await {
-            log::info!("should resolve new backlink: {url}");
-
-            let known = has_backlinks(&mut db, &url).await.unwrap_or_else(|err| {
-                log::error!("Encountered error while resolving backlink: {:?}", err);
-                true
-            });
-
-            if known {
-                // TODO: Re-resolve periodically?
-                continue;
-            }
-
-            match Url::parse(&url) {
-                Ok(url) => {
-                    let ls_backlinks = get_lobsters_backlinks(&http_client, &url).await;
-                    match ls_backlinks {
-                        Ok(ls_backlinks) => {
-                            if let Some(ls_backlinks) = ls_backlinks {
-                                match store_backlinks(&mut db, &url, ls_backlinks).await {
-                                    Ok(_) => {}
-                                    Err(err) => {
-                                        log::warn!(
-                                            "Encountered error while storing backlinks: \
-                                        {:?}",
-                                            err
-                                        )
-                                    }
-                                };
-                            }
-                        }
-                        Err(err) => {
-                            log::warn!("Could not retrieve lobsters backlinks: {:?}", err);
-                        }
-                    }
-                }
-                Err(err) => {
-                    log::warn!("Failed to parse link during backlink resolve: {url}: {err:?}");
-                }
-            }
-        }
-    });
+pub struct BacklinkResolver {
+    http_client: Client,
+    db: DbPool,
 }
 
-async fn has_backlinks(db: &mut DbPool, req_url: &String) -> anyhow::Result<bool> {
-    use crate::schema::backlinks::dsl::*;
+impl BacklinkResolver {
+    pub fn new(db: DbPool) -> Self {
+        Self {
+            // TODO: Custom user-agent?
+            http_client: Client::new(),
+            db,
+        }
+    }
 
-    let mut db = db.get()?;
+    // Hmm, not sure how happy I am with the Arc<Self> here.
+    pub fn schedule_backlink_resolver(self: Arc<Self>, mut rx: Receiver<String>) {
+        tokio::spawn(async move {
+            log::info!("Starting backlink resolver");
+            while let Some(url) = rx.recv().await {
+                log::info!("should resolve new backlink: {url}");
 
-    match backlinks.find(req_url).execute(&mut db)? {
-        0 => Ok(false),
-        1 => Ok(true),
-        _ => {
-            log::warn!("More than one backlink for: {req_url}");
-            // TODO: Fail save for now and don't re-resolve. Should think about if we can
-            // eliminate all these "exists more than one cases". They should not be able to
-            // happen no?
-            Ok(true)
+                let backlinks = self.retrieve_backlinks(url.as_str()).await;
+                match backlinks {
+                    Ok(backlinks) => {
+                        log::debug!("Resolved to: {:?}", backlinks);
+                    }
+                    Err(err) => {
+                        log::error!("Failed to resolve backlink {url}: {err}");
+                    }
+                }
+            }
+        });
+    }
+
+    // This function tries to resolve backlinks for the given url. If there are any, they are stored in
+    // the database and subsequently returned.
+    pub async fn retrieve_backlinks(&self, request_url: &str) -> anyhow::Result<Option<Backlink>> {
+        use crate::schema::backlinks::dsl::*;
+
+        let mut db = self.db.get()?;
+
+        let existing_backlinks: Vec<Backlink> =
+            backlinks.filter(url.eq(request_url)).load(&mut db)?;
+        match existing_backlinks.len() {
+            // If there are none, try to find them
+            0 => {
+                let lobster_backlinks =
+                    resolve_lobster_backlinks(&self.http_client, request_url).await?;
+
+                let backlink = Backlink {
+                    url: request_url.to_string(),
+                    lobsters_links: lobster_backlinks.map(join_backlinks),
+                    hn_links: None,
+                };
+
+                diesel::insert_into(backlinks)
+                    .values(&backlink)
+                    .on_conflict(url)
+                    .do_update()
+                    .set((
+                        lobsters_links.eq(coalesce(lobsters_links, excluded(lobsters_links))),
+                        hn_links.eq(coalesce(hn_links, excluded(hn_links))),
+                    ))
+                    .execute(&mut db)?;
+
+                Ok(Some(backlink))
+            }
+            // If a single backlink is found, return it
+            1 => Ok(Some(existing_backlinks.first().cloned().unwrap())),
+            // If there are multiple, gg
+            _ => {
+                log::error!("Multiple backlinks found for: {request_url}");
+                bail!("Multiple backlinks found for: {request_url}")
+            }
         }
     }
 }
 
-async fn store_backlinks(
-    db: &mut DbPool,
-    og_url: &Url,
-    ls_backlinks: Vec<String>,
-) -> anyhow::Result<()> {
-    use crate::schema::backlinks::dsl::*;
-
-    let mut db = db.get()?;
-
-    let joined = <[String]>::join(&ls_backlinks, "🙂‍↕️");
-
-    diesel::insert_into(backlinks)
-        .values((url.eq(og_url.as_str()), lobsters_links.eq(joined)))
-        .execute(&mut db)?;
-
-    Ok(())
-}
-
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct LobsterDomainResult {
     url: String,
     comments_url: String,
 }
 
-pub async fn get_lobsters_backlinks(
+async fn resolve_lobster_backlinks(
     http_client: &Client,
-    url: &Url,
+    url: &str,
 ) -> anyhow::Result<Option<Vec<String>>> {
+    let url = Url::parse(url)?;
+
     if let Some(host) = url.host_str() {
+        // According to my testing, lobsters filters/does not expect a "www" subdomain. Thus, we
+        // also filter it here.
+        let host = host.strip_prefix("www.").unwrap_or(host);
+
         const LOBSTERS_SEARCH_URL: &str = "https://lobste.rs/domains/";
         let lobster_search = format!("{}{}.json", LOBSTERS_SEARCH_URL, host);
+
+        log::debug!("Searching on lobsters: {lobster_search:?}");
 
         let resp = http_client.get(lobster_search).send().await?;
 
         match resp.status().as_u16() {
             200 => {
                 let entries = resp.json::<Vec<LobsterDomainResult>>().await?;
+
+                log::debug!("Lobsters backlinks found for {url:?}: {entries:?}");
 
                 let mut backlinks: Vec<String> = Vec::new();
 
@@ -127,9 +134,16 @@ pub async fn get_lobsters_backlinks(
                     backlinks
                 );
 
-                Ok(Some(backlinks))
+                if backlinks.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(backlinks))
+                }
             }
-            404 => Ok(None),
+            404 => {
+                log::debug!("No lobsters backlinks found for {url:?}");
+                Ok(None)
+            }
             _ => {
                 log::warn!(
                     "Unexpected lobsters status code {:?} while resolve of {}",

@@ -1,6 +1,6 @@
-use crate::AppState;
 use crate::auth::extractors::AuthInfo;
 use crate::links::models::{Fang, NewFang};
+use crate::{AppState, DbConnection};
 use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::ops::DerefMut;
 use std::time::Duration;
 fn get_fang_for_user(
-    db: &mut r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
+    db: &mut DbConnection,
     user: &crate::users::models::User,
     url_param: &str,
 ) -> Result<Option<Fang>, diesel::result::Error> {
@@ -37,7 +37,7 @@ fn get_fang_for_user(
 }
 
 fn set_soft_delete_for_fang(
-    db: &mut r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
+    db: &mut DbConnection,
     fang: &Fang,
     delete: bool,
 ) -> anyhow::Result<()> {

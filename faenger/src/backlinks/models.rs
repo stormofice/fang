@@ -1,7 +1,7 @@
-use diesel::{Identifiable, Queryable, Selectable};
+use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use serde::Serialize;
 
-#[derive(Queryable, Clone, Selectable, Identifiable, Debug, Serialize)]
+#[derive(Queryable, Clone, Selectable, Identifiable, Insertable, Debug, Serialize)]
 #[diesel(primary_key(url))]
 #[diesel(table_name = crate::schema::backlinks)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]

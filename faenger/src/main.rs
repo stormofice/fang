@@ -1,4 +1,5 @@
 #![allow(clippy::uninlined_format_args)]
+use crate::backlinks::resolver::BacklinkResolver;
 use diesel::SqliteConnection;
 use diesel::r2d2::ConnectionManager;
 use dotenvy::dotenv;
@@ -9,12 +10,14 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 pub mod auth;
 pub mod backlinks;
+pub mod db_utils;
 pub mod links;
 pub mod routes;
 pub mod schema;
 pub mod users;
 
 type DbPool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
+type DbConnection = r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>;
 
 fn setup_database() -> DbPool {
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
@@ -35,6 +38,7 @@ pub struct AppState {
     pub db: DbPool,
     pub config: Arc<RwLock<FaengerConfig>>,
     pub backlink_tx: Sender<String>,
+    pub backlink_resolver: Arc<BacklinkResolver>,
 }
 
 #[tokio::main]
@@ -53,12 +57,16 @@ async fn main() -> anyhow::Result<()> {
     let (backlink_tx, backlink_rx): (Sender<String>, Receiver<String>) =
         tokio::sync::mpsc::channel(32);
 
-    backlinks::resolver::create_backlink_resolver(backlink_rx, db.clone());
+    let backlink_resolver = Arc::new(backlinks::resolver::BacklinkResolver::new(db.clone()));
+    backlink_resolver
+        .clone()
+        .schedule_backlink_resolver(backlink_rx);
 
     let state = AppState {
         db,
         config: Arc::new(RwLock::new(config)),
         backlink_tx,
+        backlink_resolver,
     };
 
     let app = routes::create_router().with_state(state);
