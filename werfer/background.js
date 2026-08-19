@@ -1,20 +1,23 @@
-browser.runtime.onInstalled.addListener(async () => {
+browser.runtime.onInstalled.addListener(async (details) => {
     console.log("Werfer loaded");
 
-    await populateSettings();
+    if (details.temporary) {
+        console.log("Temporary installation, enabling dev mode");
+
+        await populateSettings(true);
+    } else {
+        await populateSettings(false);
+    }
+
 });
 
-async function populateSettings() {
-    const options = await browser.storage.sync.get();
-    const force = false;
-    const dev = false;
-
+async function populateSettings(is_dev) {
     const defaults = {
-        backend_url: dev ? "http://localhost:4567" : "set-your-own",
-        api_key: dev ? "IHsw2IQoPYYVT5c8d9V2JRQ0JuPq27qV" : "set-your-own",
+        backend_url: is_dev ? "http://localhost:4567" : "set-your-own",
+        api_key: is_dev ? "IHsw2IQoPYYVT5c8d9V2JRQ0JuPq27qV" : "set-your-own",
     };
 
-    if (force) {
+    if (is_dev) {
         await browser.storage.sync.set(defaults);
     }
 }
