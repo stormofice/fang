@@ -39,7 +39,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             case "tabInteraction":
                 // Skip internal URLs
                 if (message.url.startsWith("about:")) {
-                    break;
+                    return false;
                 }
 
                 // We do NOT await here, but I think it is fine. We do not care about a response and only want it done.
@@ -64,6 +64,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
     } else {
         console.error("Malformed message", message);
+        return false;
     }
     return true;
 });
