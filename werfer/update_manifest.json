@@ -13,6 +13,10 @@
         {
           "version": "0.1.4",
           "update_link": "https://github.com/stormofice/fang/releases/download/0.1.4/werfer-0.1.4.xpi"
+        },
+        {
+          "version": "0.1.5",
+          "update_link": "https://github.com/stormofice/fang/releases/download/0.1.5/werfer-0.1.5.xpi"
         }
       ]
     }
